@@ -103,12 +103,18 @@
   @media (prefers-reduced-motion: reduce){
     .mday.reciente{animation:none;box-shadow:0 0 0 2px var(--accent) inset}
   }
-  /* v0.8.0: línea «Últimos cambios» en el pie, debajo de la línea de
-     fecha y versión: una sola línea, discreta, clicable (salta al
-     mes del cambio más reciente). Parpadea un momento al aparecer
-     o al actualizarse y luego queda fija. Si el texto no cabe, se
-     corta con puntos suspensivos: nunca ocupa dos líneas. */
-  .ult-cambios{display:block;width:100%;min-height:0;margin-top:2px;background:none;border:0;padding:2px 6px;font:inherit;font-size:12.5px;color:var(--muted);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
+  /* v0.8.0: línea «Últimos cambios» en el pie: discreta, clicable
+     (salta al mes del cambio más reciente). Parpadea un momento al
+     aparecer o al actualizarse y luego queda fija.
+     v0.8.3: ya no es una línea propia debajo de la de fecha y
+     versión: va EN LA MISMA línea del pie, tras el estado de
+     conexión y separada de él por un «·» con algo más de aire
+     (el ::before, que desaparece con el botón cuando está oculto).
+     Si el texto no cabe en lo que queda de línea, se corta con
+     puntos suspensivos. El parpadeo y el clic son solo de esta
+     parte, no de toda la línea. */
+  .ult-cambios{display:inline-block;max-width:100%;min-height:0;margin-left:.55em;background:none;border:0;padding:2px 4px;font:inherit;font-size:12.5px;color:var(--muted);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
+  .ult-cambios::before{content:"·";margin-right:.55em;color:var(--faint)}
   .ult-cambios:hover{color:var(--accent-strong);text-decoration:underline}
   .ult-cambios[hidden]{display:none}
   .ult-cambios.parpadea{animation:ucParpadeo .55s ease-in-out 4}
@@ -976,7 +982,17 @@
    (3) El tooltip del botón ya no dice «solo el usuario
    seleccionado»: dice «Exportar al calendario de Outlook». El
    orden de botones no cambia y el Excel tampoco. */
-const VERSION = "0.8.2";
+/* v0.8.3: un cambio y nada más, en el pie.
+   (1) El pie pasa a ser UNA sola línea: «Hoy: {fecha} · v{versión}
+   · {estado} · Últimos cambios: …». La parte de «Últimos cambios»
+   deja de ocupar una segunda línea debajo y va en la misma, tras
+   el estado de conexión, con un separador «·» algo más separado.
+   (2) Esa parte mantiene su comportamiento intacto: parpadea un
+   momento al aparecer o al actualizarse (solo ella, no toda la
+   línea) y es clicable para saltar al mes del cambio más reciente.
+   Si no hay cambios que mostrar, la línea queda como antes, sin
+   el tramo de «Últimos cambios». */
+const VERSION = "0.8.3";
 /* Estado del registro de cambios (v0.8.0): se declara aquí, antes
    de cualquier repintado, porque renderCalendario consulta los días
    a resaltar y las vías de guardado anotan filas en la cola; las
@@ -3599,9 +3615,11 @@ asegurarAnoGenerado(String(ANO_ACTUAL));
 pintarLeyenda($("#leyendaCal"));
 renderAll();
 $("#pie").innerHTML = "Hoy: " + parseF(HOY).toLocaleDateString("es-ES",{weekday:"long", day:"numeric", month:"long", year:"numeric"}) + " · v" + VERSION + ' · <span id="syncEstado">Conectando…</span>'
-  /* v0.8.0: la línea «Últimos cambios» vive en el propio pie, debajo
-     de la línea de fecha y versión; nace oculta y solo aparece si
-     hay cambios recientes que mostrar (ver pintarUltimosCambios). */
+  /* v0.8.0: la parte «Últimos cambios» vive en el propio pie; desde
+     la v0.8.3 va en la MISMA línea que la fecha, la versión y el
+     estado (tras este, con su separador «·»). Nace oculta y solo
+     aparece si hay cambios recientes que mostrar (ver
+     pintarUltimosCambios). */
   + '<button type="button" class="ult-cambios" id="ultCambios" hidden></button>';
 
 /* ================= DATOS COMPARTIDOS (Supabase) =================
