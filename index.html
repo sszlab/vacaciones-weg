@@ -369,6 +369,12 @@
   .res-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;margin-top:14px}
   @media (max-width:900px){.res-grid{grid-template-columns:1fr}}
   .chartbox h3,.card h2.sec,.card h3.sec{margin:0 0 4px;font-size:16.5px}
+  /* v0.8.4: barras pinchables de los gráficos en vista individual
+     (abren la vista ampliada del mes) y líneas de esa vista: días en
+     grande, uno por línea; los planificados, en gris. */
+  .bar-click:hover{opacity:.85}
+  .chart-dia{font-size:16.5px;line-height:1.65;font-variant-numeric:tabular-nums}
+  .chart-dia.plan{color:var(--muted)}
   /* Usuarios */
   .utable th,.utable td{padding:8px;border-bottom:1px solid var(--line);font-size:13.5px;text-align:left;vertical-align:middle}
   .utable th{color:var(--muted);font-size:12px;font-weight:600}
@@ -424,14 +430,11 @@
   .stats-banner b{font-size:16.5px}
   .stats-detalle{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 18px;font-size:14px}
   @media (max-width:700px){.stats-detalle{grid-template-columns:1fr 1fr}}
-  /* v0.6.0: días concretos de vacaciones por mes, en la vista de una
-     sola persona: una columna por mes, cada día en su línea. */
-  .vac-meses{display:flex;flex-wrap:wrap;gap:12px 24px}
-  .vac-mes{min-width:88px}
-  .vac-mes-nom{font-weight:700;font-size:13.5px;margin-bottom:3px;border-bottom:1px solid var(--line);padding-bottom:2px}
-  .vac-mes-n{color:var(--muted);font-weight:400}
-  .vac-dia{font-size:13.5px;line-height:1.6;font-variant-numeric:tabular-nums;white-space:nowrap}
-  .vac-dia.plan{color:var(--muted)}
+  /* v0.6.0: los días concretos iban en una tarjeta propia, con una
+     columna por mes. v0.8.4: esa tarjeta ya no existe; los días se
+     pintan como texto dentro del SVG del gráfico de vacaciones por
+     mes (ver barrasSVG y diasVacPorMes), así que estas clases han
+     desaparecido con ella. */
   details.reglas{margin-top:14px}
   details.reglas summary{cursor:pointer;font-weight:700;font-size:15px;padding:6px 0}
   details.reglas h3{font-size:15px;margin:16px 0 4px}
@@ -686,14 +689,14 @@
       </div>
     </div>
     <div class="res-grid">
-      <div class="card chartbox">
+      <div class="card chartbox" id="cardChartVac">
         <h3>Vacaciones por mes (días)</h3>
-        <p class="sub">Días de vacaciones del equipo, mes a mes.</p>
+        <p class="sub" id="chartVacSub">Días de vacaciones del equipo, mes a mes.</p>
         <div id="chartVac"></div>
       </div>
       <div class="card chartbox">
         <h3>Horas de ausencia por mes</h3>
-        <p class="sub">Sin teletrabajo: baja, médico, permiso, visita y formación.</p>
+        <p class="sub" id="chartHorasSub">Sin teletrabajo: baja, médico, permiso, visita y formación.</p>
         <div id="chartHoras"></div>
       </div>
       <div class="card">
@@ -815,6 +818,17 @@
           <p class="nota">Se marcan todos los días laborables entre las dos fechas (los fines de semana y festivos no cuentan). Los días que ya tengan otra ausencia, o que se pasen del saldo, se saltan y se avisa al final. También puedes elegir los días uno a uno pinchando en el calendario.</p>
         </form>
       </div>
+  </div>
+
+  <!-- v0.8.4: vista ampliada de un mes al pinchar su barra en los
+       gráficos de Estadísticas (solo vista individual): los días en
+       grande y legibles, uno por línea. -->
+  <div class="modal-overlay" id="chartModal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="chartModalTitulo">
+      <button class="modal-close" id="btnCloseChartModal" type="button" aria-label="Cerrar vista ampliada">✕</button>
+      <h2 class="sec" id="chartModalTitulo"></h2>
+      <div id="chartModalLista"></div>
+    </div>
   </div>
 
   <footer id="pie"></footer>
@@ -992,7 +1006,24 @@
    línea) y es clicable para saltar al mes del cambio más reciente.
    Si no hay cambios que mostrar, la línea queda como antes, sin
    el tramo de «Últimos cambios». */
-const VERSION = "0.8.3";
+/* v0.8.4: un cambio y nada más, en Estadísticas (patch).
+   La tarjeta separada «Días de vacaciones de {nombre} en {año}»
+   (v0.6.0) desaparece: el detalle vive ahora en los propios
+   gráficos, solo en la vista de una sola persona. (1) Dentro de
+   cada barra del gráfico «Vacaciones por mes (días)» va apilada la
+   fecha compacta de cada día («03/08»), en blanco sobre el verde;
+   el total sigue encima de la barra y el alto del gráfico se
+   ajusta para que quepan ~12 px por día en la barra más alta.
+   (2) Pinchar una barra abre una vista ampliada (ventana centrada)
+   con los días de ese mes en grande, en formato completo
+   («Lun 03/08»); los planificados, en gris; se cierra con la ✕,
+   pinchando fuera o con Escape. (3) Lo mismo en el gráfico de
+   horas de ausencia: fecha compacta dentro de la barra y, en la
+   vista ampliada, tipo, día y horas de cada ausencia («M · Mar
+   04/08 · 09:00–11:00»; las de día completo, solo el día). La
+   vista de equipo no cambia: gráficos como siempre, sin etiquetas
+   de días ni clic. */
+const VERSION = "0.8.4";
 /* Estado del registro de cambios (v0.8.0): se declara aquí, antes
    de cualquier repintado, porque renderCalendario consulta los días
    a resaltar y las vías de guardado anotan filas en la cola; las
@@ -3124,37 +3155,94 @@ function crearUsuario(nombre, depto, resp, pend, diasAno, fechaInicio){
 }
 
 /* ================= ESTADÍSTICAS ================= */
-function barrasSVG(datos, color, unidad){
+function barrasSVG(datos, color, unidad, etiquetas){
   const max = Math.max.apply(null, datos.concat([1]));
-  const W=520, H=170, base=140, bw=30, gap=(W-20)/12;
+  const W=520, bw=30, gap=(W-20)/12;
+  /* v0.8.4: etiquetas (solo en la vista individual) trae, por mes,
+     la fecha compacta («03/08») de cada día a pintar DENTRO de su
+     barra, apilada en vertical y en blanco sobre el color. El alto
+     útil crece lo necesario para que quepan ~12 px por etiqueta en
+     la barra más apurada: en el gráfico de días la altura de la
+     barra ya es proporcional al nº de días; en el de horas se
+     escala según el mes con peor proporción horas/etiquetas. Las
+     barras con etiquetas son pinchables (clase bar-click): abren
+     la vista ampliada del mes (ver abrirChartModal). Sin etiquetas
+     el gráfico es el de siempre (equipo). */
+  let areaH = 116;
+  if(etiquetas){
+    etiquetas.forEach((ets,i)=>{
+      if(!ets.length) return;
+      const v = datos[i];
+      areaH = Math.max(areaH, Math.ceil((ets.length*12+4)*(v>0 ? max/v : 1)));
+    });
+    areaH = Math.min(areaH, 480);
+  }
+  const base = 24 + areaH, H = base + (etiquetas ? 22 : 30);
   let s = '<svg viewBox="0 0 '+W+" "+H+'" style="width:100%;height:auto" role="img">';
   datos.forEach((v,i)=>{
-    const h = Math.round(v/max*(base-24)), x = 12+i*gap, y = base-h;
-    s += '<rect x="'+x+'" y="'+y+'" width="'+bw+'" height="'+h+'" rx="4" fill="'+color+'"><title>'+MESES[i]+": "+fmt(v)+" "+unidad+"</title></rect>";
+    const h = Math.round(v/max*areaH), x = 12+i*gap, y = base-h;
+    const clic = etiquetas && etiquetas[i].length ? ' class="bar-click" data-mes="'+i+'" style="cursor:pointer"' : "";
+    s += '<rect x="'+x+'" y="'+y+'" width="'+bw+'" height="'+h+'" rx="4" fill="'+color+'"'+clic+'><title>'+MESES[i]+": "+fmt(v)+" "+unidad+"</title></rect>";
     s += '<text x="'+(x+bw/2)+'" y="'+(y-5)+'" text-anchor="middle" font-size="10.5" fill="var(--muted)">'+(v?fmt(v):"")+"</text>";
     s += '<text x="'+(x+bw/2)+'" y="'+(base+15)+'" text-anchor="middle" font-size="10.5" fill="var(--muted)">'+MESES_C[i]+"</text>";
+    if(etiquetas){
+      etiquetas[i].forEach((t,j)=>{
+        const ly = y + 11 + j*12;
+        if(ly > base-2) return;
+        s += '<text x="'+(x+bw/2)+'" y="'+ly+'" text-anchor="middle" font-size="8.2" fill="#fff" style="pointer-events:none">'+esc(t)+"</text>";
+      });
+    }
   });
   s += '<line x1="6" y1="'+base+'" x2="'+(W-6)+'" y2="'+base+'" stroke="var(--line-strong)" stroke-width="1"/></svg>';
   return s;
 }
 /* v0.6.0: los días concretos de vacaciones de una persona en el año
-   que se está viendo, mes a mes: una columna por mes y cada día en
-   su propia línea, con el día de la semana abreviado («Lun 04/01»).
-   Los días futuros (planificados, aún por disfrutar) van en gris.
-   Solo se muestra en la vista individual de Estadísticas. */
+   que se está viendo, mes a mes, con el día de la semana abreviado
+   («Lun 04/01»); los futuros (planificados) van en gris.
+   v0.8.4: ya no se pintan en una tarjeta propia («Días de vacaciones
+   de…»): la fecha compacta va DENTRO de cada barra del gráfico
+   «Vacaciones por mes (días)» y el detalle completo sale en la
+   vista ampliada al pinchar la barra (ver barrasSVG y
+   abrirChartModal). Estas funciones solo preparan los datos:
+   diasVacPorMes da 12 meses con sus días como {txt, plan};
+   ausenciasPorMes, lo mismo para el gráfico de horas de ausencia
+   (sin vacaciones ni teletrabajo): cada ausencia como {compact,
+   txt}, con tipo, día y tramo horario si no es día completo.
+   Solo vista individual. */
 const DIAS_SEM_C = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
-function diasVacHTML(i, ano){
+function diasVacPorMes(i, ano){
   const fechas = state.registros.filter(r=>r.p===i && r.c==="V" && r.f.startsWith(String(ano))).map(r=>r.f).sort();
-  if(!fechas.length) return "";
   const porMes = fechas.reduce((acc,f)=>{ acc[Number(f.slice(5,7))-1].push(f); return acc; }, Array.from({length:12},()=>[]));
-  const cols = porMes.map((dias,m)=>{
-    if(!dias.length) return "";
-    return '<div class="vac-mes"><div class="vac-mes-nom">'+MESES[m]+' <span class="vac-mes-n">('+dias.length+")</span></div>"
-      + dias.map(f=>{ const d = parseF(f); return '<div class="vac-dia'+(f>HOY ? " plan" : "")+'">'+DIAS_SEM_C[d.getDay()]+" "+f.slice(8,10)+"/"+f.slice(5,7)+"</div>"; }).join("")
-      + "</div>";
-  }).join("");
-  return '<div class="card" style="margin-bottom:14px"><h3 class="sec">Días de vacaciones de '+esc(state.usuarios[i].nombre)+' en '+ano+'</h3><p class="sub">Cada día concreto, mes a mes, uno debajo de otro. En gris, los planificados: aún están por disfrutar.</p><div class="vac-meses">'+cols+"</div></div>";
+  return porMes.map(dias=>dias.map(f=>{ const d = parseF(f); return { txt: DIAS_SEM_C[d.getDay()]+" "+f.slice(8,10)+"/"+f.slice(5,7), plan: f>HOY }; }));
 }
+function ausenciasPorMes(i, ano){
+  const regs = state.registros.filter(r=>r.p===i && r.c!=="V" && r.c!=="T" && r.f.startsWith(String(ano))).slice()
+    .sort((a,b)=> a.f<b.f ? -1 : a.f>b.f ? 1 : (String(a.hi)<String(b.hi) ? -1 : 1));
+  const porMes = Array.from({length:12},()=>[]);
+  regs.forEach(r=>{
+    const d = parseF(r.f);
+    const dia = DIAS_SEM_C[d.getDay()]+" "+r.f.slice(8,10)+"/"+r.f.slice(5,7);
+    porMes[Number(r.f.slice(5,7))-1].push({
+      compact: r.f.slice(8,10)+"/"+r.f.slice(5,7),
+      txt: r.c+" · "+dia+(r.hi==="Completo" ? "" : " · "+r.hi+"–"+r.hf)
+    });
+  });
+  return porMes;
+}
+/* v0.8.4: vista ampliada de un mes al pinchar su barra: los días en
+   grande y legibles, uno por línea; los planificados, en gris. Se
+   cierra con la ✕, pinchando fuera o con Escape (los dos últimos se
+   enganchan una sola vez, más abajo junto al resto de la ventana). */
+let statsModalData = { vac:null, aus:null };
+function abrirChartModal(titulo, lineas){
+  const ov = $("#chartModal"); if(!ov) return;
+  $("#chartModalTitulo").textContent = titulo;
+  $("#chartModalLista").innerHTML = lineas.length
+    ? lineas.map(l=>'<div class="chart-dia'+(l.plan ? " plan" : "")+'">'+esc(l.txt)+"</div>").join("")
+    : '<p class="sub" style="margin:0">Sin días en este mes.</p>';
+  ov.hidden = false;
+}
+function cerrarChartModal(){ const ov = $("#chartModal"); if(ov) ov.hidden = true; }
 function renderStats(){
   const ano = state.ano;
   asegurarAnoGenerado(String(ano));
@@ -3180,8 +3268,7 @@ function renderStats(){
       + '<span><b>Vacaciones pendientes:</b> '+fmt(ss.restantes)+' de '+fmt(ss.disponible)+' días</span>'
       + '<span><b>Horas de ausencia:</b> '+fmt(ss.horasAus)+' h · <b>Teletrabajo:</b> '+fmt(ss.horasTele)+' h</span>'
       + (porTipo || '<span>Sin ausencias registradas en '+ano+'.</span>')
-      + "</div></div>"
-      + diasVacHTML(solo, ano);
+      + "</div></div>";
   } else { banner.innerHTML = ""; detalle.innerHTML = ""; }
   // KPIs: del equipo activo o solo de la persona elegida
   let totU=0, totU25=0, totR=0, totH=0, totT=0;
@@ -3232,8 +3319,36 @@ function renderStats(){
     if(r.c==="V") vacMes[m]++;
     horMes[m] += horasRegistro(r).aus;
   });
-  $("#chartVac").innerHTML = barrasSVG(vacMes, DATA.tipos.V.color, "días");
-  $("#chartHoras").innerHTML = barrasSVG(horMes.map(x=>Math.round(x*100)/100), DATA.tipos.M.color, "h");
+  /* v0.8.4: en vista individual, la fecha compacta de cada día va
+     DENTRO de su barra (en los dos gráficos) y pinchar una barra
+     abre la vista ampliada de ese mes: en vacaciones, los días en
+     formato completo; en ausencias, tipo, día y horas. En equipo,
+     los gráficos quedan como siempre, sin etiquetas ni clic. */
+  const subVac = $("#chartVacSub"), subHor = $("#chartHorasSub");
+  const horVals = horMes.map(x=>Math.round(x*100)/100);
+  if(solo>=0){
+    const dv = diasVacPorMes(solo, ano), am = ausenciasPorMes(solo, ano);
+    statsModalData = { vac: dv, aus: am };
+    $("#chartVac").innerHTML = barrasSVG(vacMes, DATA.tipos.V.color, "días", dv.map(dias=>dias.map(d=>d.txt.slice(4))));
+    $("#chartHoras").innerHTML = barrasSVG(horVals, DATA.tipos.M.color, "h", am.map(aus=>aus.map(a=>a.compact)));
+    if(subVac) subVac.textContent = "Días de vacaciones de "+state.usuarios[solo].nombre+", mes a mes. Dentro de cada barra, sus días; pincha una barra para verlos en grande.";
+    if(subHor) subHor.textContent = "Sin teletrabajo: baja, médico, permiso, visita y formación. Pincha una barra para ver cada ausencia con su hora.";
+    const nom = state.usuarios[solo].nombre;
+    $("#chartVac").querySelectorAll(".bar-click").forEach(el=>el.addEventListener("click", ()=>{
+      const m = Number(el.dataset.mes);
+      abrirChartModal("Vacaciones de "+nom+" · "+MESES[m]+" de "+ano, statsModalData.vac[m]);
+    }));
+    $("#chartHoras").querySelectorAll(".bar-click").forEach(el=>el.addEventListener("click", ()=>{
+      const m = Number(el.dataset.mes);
+      abrirChartModal("Ausencias de "+nom+" · "+MESES[m]+" de "+ano, statsModalData.aus[m]);
+    }));
+  } else {
+    statsModalData = { vac:null, aus:null };
+    $("#chartVac").innerHTML = barrasSVG(vacMes, DATA.tipos.V.color, "días");
+    $("#chartHoras").innerHTML = barrasSVG(horVals, DATA.tipos.M.color, "h");
+    if(subVac) subVac.textContent = "Días de vacaciones del equipo, mes a mes.";
+    if(subHor) subHor.textContent = "Sin teletrabajo: baja, médico, permiso, visita y formación.";
+  }
   // Totales por tipo
   const agg = {};
   Object.keys(DATA.tipos).forEach(c=>{ agg[c]={n:0, dias:0, horas:0}; });
@@ -3548,6 +3663,11 @@ function cerrarPedirVacaciones(){ $("#pedirModal").hidden = true; const panel = 
 $("#btnPedirVac").addEventListener("click", ()=>abrirPedirVacaciones(null));
 $("#btnClosePedir").addEventListener("click", cerrarPedirVacaciones);
 $("#pedirModal").addEventListener("click", e=>{ if(e.target.id==="pedirModal") cerrarPedirVacaciones(); });
+/* v0.8.4: cierre de la vista ampliada de los gráficos (✕, pinchar
+   fuera o Escape). */
+$("#btnCloseChartModal").addEventListener("click", cerrarChartModal);
+$("#chartModal").addEventListener("click", e=>{ if(e.target.id==="chartModal") cerrarChartModal(); });
+document.addEventListener("keydown", e=>{ if(e.key==="Escape") cerrarChartModal(); });
 /* Selector de persona de la ventana: el botón abre/cierra el panel y
    al elegir una persona se actualizan el botón y la info del tramo.
    Un clic en otra parte de la ventana cierra el panel sin cerrarla. */
