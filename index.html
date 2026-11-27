@@ -1023,7 +1023,28 @@
    04/08 · 09:00–11:00»; las de día completo, solo el día). La
    vista de equipo no cambia: gráficos como siempre, sin etiquetas
    de días ni clic. */
-const VERSION = "0.8.4";
+/* v0.8.5: un cambio y nada más, en la exportación a Outlook (patch).
+   El .ics gana el formato que Outlook entiende por evento:
+   (1) Día completo frente a horas: las ausencias de día entero
+   salen como evento de día completo (DTSTART/DTEND con VALUE=DATE
+   y fin exclusivo, el día siguiente) y las de varios días seguidos
+   de la misma persona y tipo se agrupan en UN solo evento que
+   abarca todos esos días; las ausencias por horas salen con su
+   tramo horario y la zona Europe/Madrid (TZID, con su VTIMEZONE).
+   (2) Cada tipo lleva su categoría de Outlook (CATEGORIES) y su
+   estado de disponibilidad (X-MICROSOFT-CDO-BUSYSTATUS e
+   INTENDEDSTATUS): Vacaciones y Permiso, fuera de la oficina
+   (OOF); Teletrabajo y Visita clientes, trabajando en otro lugar
+   (WORKINGELSEWHERE: fuera pero disponible); Curso formación,
+   ocupado (BUSY). (3) Los tipos de salud (códigos B y M) son dato
+   sensible: en el .ics no aparece su nombre en ningún sitio —ni
+   resumen, ni descripción, ni categoría—; ambos salen como un
+   evento neutro «No disponible», con categoría «No disponible» y
+   CLASS:PRIVATE (la B, fuera de la oficina; la M, ocupado, con
+   sus horas). El resto no cambia: mismo botón, mismo filtro
+   actual y UID estables y deterministas (en un grupo de días, el
+   del primer día del grupo). */
+const VERSION = "0.8.5";
 /* Estado del registro de cambios (v0.8.0): se declara aquí, antes
    de cualquier repintado, porque renderCalendario consulta los días
    a resaltar y las vías de guardado anotan filas en la cola; las
@@ -2263,7 +2284,7 @@ $("#fileImportJson").addEventListener("change", e=>{
   };
   reader.readAsText(file);
 });
-/* ================= EXPORTAR A OUTLOOK (.ics) (v0.8.0; v0.8.2) =================
+/* ================= EXPORTAR A OUTLOOK (.ics) (v0.8.0; v0.8.2; v0.8.5) =================
    Botón con el logo de Outlook justo a la derecha del selector de
    usuario: descarga un archivo .ics con las ausencias que pasan el
    filtro actual del calendario (v0.8.2): con «Todos» lleva las de
@@ -2271,14 +2292,20 @@ $("#fileImportJson").addEventListener("change", e=>{
    y con una persona solo las suyas; ya no se niega a descargar
    cuando está «Todos». Outlook importa el .ics con doble clic
    (igual de fácil que el JSON de datos, pero para el calendario).
-   Los eventos de día completo van como eventos de día entero
-   (fecha de inicio y de fin exclusivo, el día siguiente) y los
-   tramos por horas con su hora local de inicio y fin. El título de
-   cada evento es «Tipo — Nombre» (p. ej. «Vacaciones — Andrés
-   Lliguilema»). El nombre del calendario y el del archivo siguen el
-   filtro: «Ausencias — Equipo» y «ausencias-equipo.ics» con
-   «Todos», el departamento con un departamento y el nombre de la
-   persona con una persona («ausencias-{nombre}.ics»).
+   El título de cada evento es «Tipo — Nombre» (p. ej. «Vacaciones
+   — Andrés Lliguilema»). El nombre del calendario y el del archivo
+   siguen el filtro: «Ausencias — Equipo» y «ausencias-equipo.ics»
+   con «Todos», el departamento con un departamento y el nombre de
+   la persona con una persona («ausencias-{nombre}.ics»).
+   v0.8.5 — formato de evento para Outlook: las ausencias de día
+   entero salen como evento de día completo (VALUE=DATE, fin
+   exclusivo) y las de varios días seguidos de la misma persona y
+   tipo se agrupan en un solo evento; las de por horas salen con
+   su tramo horario en la zona Europe/Madrid. Cada tipo lleva su
+   categoría (CATEGORIES) y su estado de disponibilidad de Outlook
+   (ver icsOutlookTipo). Los tipos de salud (B y M) son dato
+   sensible: su nombre no aparece en ningún sitio del archivo;
+   salen como evento neutro y privado «No disponible».
    Sin duplicados al reimportar: cada evento lleva un UID estable y
    determinista derivado de la identidad de la ausencia (ver
    icsUID), nunca aleatorio, así que importar el mismo .ics dos
@@ -2300,6 +2327,66 @@ function icsUID(r, vistos){
   const n = (vistos[base]||0)+1; vistos[base] = n;
   return base+(n>1 ? "-"+n : "")+"@vacaciones-weg";
 }
+/* v0.8.5: categoría y estado de disponibilidad en Outlook por tipo.
+   busy es el valor de X-MICROSOFT-CDO-BUSYSTATUS (y de
+   INTENDEDSTATUS): OOF = fuera de la oficina, WORKINGELSEWHERE =
+   trabajando en otro lugar (fuera pero disponible), BUSY = ocupado.
+   Los tipos de salud (B y M) llevan «privado»: su nombre real no
+   puede aparecer en el .ics (ni en el resumen ni en la categoría);
+   se exportan con la etiqueta y la categoría neutras «No
+   disponible» y CLASS:PRIVATE, para que Outlook enseñe solo que
+   la persona no está disponible, sin revelar ningún dato de salud. */
+function icsOutlookTipo(c){
+  switch(c){
+    case "V": return {cat:"Vacaciones", busy:"OOF", privado:false};
+    case "P": return {cat:"Permiso", busy:"OOF", privado:false};
+    case "T": return {cat:"Teletrabajo", busy:"WORKINGELSEWHERE", privado:false};
+    case "C": return {cat:"Visita clientes", busy:"WORKINGELSEWHERE", privado:false};
+    case "F": return {cat:"Formación", busy:"BUSY", privado:false};
+    case "B": return {cat:"No disponible", busy:"OOF", privado:true};
+    case "M": return {cat:"No disponible", busy:"BUSY", privado:true};
+    default: return {cat:"", busy:"BUSY", privado:false};
+  }
+}
+/* ¿Es «HH:MM» (tramo por horas) y no «Completo» u otro marcador? */
+function icsEsHora(v){ return /^\d{1,2}:\d{2}$/.test(String(v||"")); }
+function icsHoraTxt(v){ const p = String(v).split(":"); return String(p[0]).padStart(2,"0")+p[1]+"00"; }
+/* Número de día (UTC) de una fecha ISO, para detectar días seguidos
+   sin que el cambio de hora de verano despiste la resta. */
+function icsNumDia(f){ const p = f.split("-").map(Number); return Date.UTC(p[0], p[1]-1, p[2]) / 86400000; }
+/* UID de un grupo de días seguidos: el del primer día del grupo
+   (su id de la base si lo tiene); sin id, se deriva de persona,
+   tipo y primera y última fecha del grupo. Determinista: el mismo
+   grupo produce siempre el mismo UID. */
+function icsUIDGrupo(grupo, vistos){
+  const r0 = grupo[0];
+  if(grupo.length===1) return icsUID(r0, vistos);
+  if(r0._id) return r0._id+"@vacaciones-weg";
+  const base = "aus-"+r0.p+"-"+r0.f+"-"+grupo[grupo.length-1].f+"-"+r0.c+"-grupo";
+  const n = (vistos[base]||0)+1; vistos[base] = n;
+  return base+(n>1 ? "-"+n : "")+"@vacaciones-weg";
+}
+/* Definición de la zona Europe/Madrid para los eventos con hora:
+   sin este bloque, Outlook no sabe interpretar el TZID. */
+const ICS_VTIMEZONE_MADRID = [
+  "BEGIN:VTIMEZONE",
+  "TZID:Europe/Madrid",
+  "BEGIN:DAYLIGHT",
+  "TZOFFSETFROM:+0100",
+  "TZOFFSETTO:+0200",
+  "TZNAME:CEST",
+  "DTSTART:19700329T020000",
+  "RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=3",
+  "END:DAYLIGHT",
+  "BEGIN:STANDARD",
+  "TZOFFSETFROM:+0200",
+  "TZOFFSETTO:+0100",
+  "TZNAME:CET",
+  "DTSTART:19701025T030000",
+  "RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=10",
+  "END:STANDARD",
+  "END:VTIMEZONE"
+];
 function exportarICS(){
   const fc = state.filtroCal || "todos";
   let calNombre, archBase;
@@ -2319,23 +2406,55 @@ function exportarICS(){
   const p2 = n=>String(n).padStart(2,"0");
   const stamp = ahora.getUTCFullYear()+p2(ahora.getUTCMonth()+1)+p2(ahora.getUTCDate())+"T"+p2(ahora.getUTCHours())+p2(ahora.getUTCMinutes())+p2(ahora.getUTCSeconds())+"Z";
   const lineas = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//WEG Iberia//Vacaciones y ausencias//ES","CALSCALE:GREGORIAN","METHOD:PUBLISH","X-WR-CALNAME:"+icsEscTxt(calNombre)];
+  lineas.push.apply(lineas, ICS_VTIMEZONE_MADRID);
+  /* Eventos a generar. Los de día completo de la misma persona y
+     tipo en días seguidos se agrupan en un solo evento (v0.8.5);
+     los de por horas van sueltos, con su tramo. Se ordenan por
+     persona, tipo y fecha para que el agrupado y los UID salgan
+     igual en cada exportación con los mismos datos. */
+  const regs = state.registros.filter(r=>pasaFiltroCal(r.p) && state.usuarios[r.p] && tipo(r.c));
+  const esDiaCompleto = r=>!icsEsHora(r.hi);
+  const eventos = [];   /* {regs:[...], diaCompleto:true} | {regs:[r], diaCompleto:false} */
+  const porGrupo = {};
+  regs.filter(esDiaCompleto).slice().sort((a,b)=> a.p-b.p || (a.c<b.c?-1:a.c>b.c?1:0) || (a.f<b.f?-1:a.f>b.f?1:0)).forEach(r=>{
+    const clave = r.p+"|"+r.c;
+    const g = porGrupo[clave];
+    if(g && icsNumDia(r.f) === icsNumDia(g[g.length-1].f)+1){ g.push(r); return; }
+    const nuevo = [r];
+    porGrupo[clave] = nuevo;
+    eventos.push({regs:nuevo, diaCompleto:true});
+  });
+  regs.filter(r=>!esDiaCompleto(r)).forEach(r=>eventos.push({regs:[r], diaCompleto:false}));
+  eventos.sort((a,b)=>{
+    const ra = a.regs[0], rb = b.regs[0];
+    return (ra.f<rb.f?-1:ra.f>rb.f?1:0) || ra.p-rb.p || (ra.c<rb.c?-1:ra.c>rb.c?1:0);
+  });
   const vistos = {};
-  state.registros.forEach(r=>{
-    if(!pasaFiltroCal(r.p)) return;
-    const u = state.usuarios[r.p]; if(!u) return;
-    const t = tipo(r.c); if(!t) return;
+  eventos.forEach(ev=>{
+    const r = ev.regs[0];
+    const u = state.usuarios[r.p];
+    const t = tipo(r.c);
+    const ol = icsOutlookTipo(r.c);
     lineas.push("BEGIN:VEVENT");
-    lineas.push("UID:"+icsUID(r, vistos));
+    lineas.push("UID:"+(ev.diaCompleto ? icsUIDGrupo(ev.regs, vistos) : icsUID(r, vistos)));
     lineas.push("DTSTAMP:"+stamp);
-    if(r.hi==="Completo"){
-      const dFin = parseF(r.f); dFin.setDate(dFin.getDate()+1);
+    if(ev.diaCompleto){
+      const ultimo = ev.regs[ev.regs.length-1];
+      const dFin = parseF(ultimo.f); dFin.setDate(dFin.getDate()+1);
       lineas.push("DTSTART;VALUE=DATE:"+r.f.replace(/-/g,""));
       lineas.push("DTEND;VALUE=DATE:"+toISO(dFin).replace(/-/g,""));
+      lineas.push("X-MICROSOFT-CDO-ALLDAYEVENT:TRUE");
     } else {
-      lineas.push("DTSTART:"+r.f.replace(/-/g,"")+"T"+String(r.hi).replace(":","")+"00");
-      lineas.push("DTEND:"+r.f.replace(/-/g,"")+"T"+String(r.hf).replace(":","")+"00");
+      lineas.push("DTSTART;TZID=Europe/Madrid:"+r.f.replace(/-/g,"")+"T"+icsHoraTxt(r.hi));
+      lineas.push("DTEND;TZID=Europe/Madrid:"+r.f.replace(/-/g,"")+"T"+icsHoraTxt(r.hf));
     }
-    lineas.push("SUMMARY:"+icsEscTxt(t.nombre+" — "+u.nombre));
+    /* Dato de salud (B y M): título neutro, sin el nombre del tipo. */
+    lineas.push("SUMMARY:"+icsEscTxt((ol.privado ? "No disponible" : t.nombre)+" — "+u.nombre));
+    if(ol.cat) lineas.push("CATEGORIES:"+icsEscTxt(ol.cat));
+    lineas.push("CLASS:"+(ol.privado ? "PRIVATE" : "PUBLIC"));
+    lineas.push("TRANSP:OPAQUE");
+    lineas.push("X-MICROSOFT-CDO-BUSYSTATUS:"+ol.busy);
+    lineas.push("X-MICROSOFT-CDO-INTENDEDSTATUS:"+ol.busy);
     lineas.push("END:VEVENT");
   });
   lineas.push("END:VCALENDAR");
